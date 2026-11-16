@@ -1,5 +1,6 @@
 """Testes automatizados do Sistema de Controle Financeiro."""
 import sqlite3
+from decimal import Decimal
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,7 +72,10 @@ class TesteSistemaFinanceiro(unittest.TestCase):
         self.assertNotIn("valor", colunas)
         self.assertEqual(registros, [(7, 12345), (8, 1099)])
         itens = listar_lancamentos(legado)
-        self.assertEqual([item["valor"] for item in itens], [123.45, 10.99])
+        self.assertEqual(
+            {item["id"]: item["valor"] for item in itens},
+            {7: Decimal("123.45"), 8: Decimal("10.99")},
+        )
 
     def test_migracao_pode_ser_executada_mais_de_uma_vez(self):
         legado = Path(self.temp_dir.name) / "legado.db"
