@@ -34,7 +34,7 @@ class TesteSistemaFinanceiro(unittest.TestCase):
         self.assertEqual(listar_lancamentos(self.db_path), [])
 
     def test_migra_banco_legado_para_centavos(self):
-        legado = self.db_path
+        legado = Path(self.temp_dir.name) / "legado.db"
         with sqlite3.connect(legado) as conexao:
             conexao.execute("""
                 CREATE TABLE lancamentos (
@@ -74,7 +74,7 @@ class TesteSistemaFinanceiro(unittest.TestCase):
         self.assertEqual([item["valor"] for item in itens], [123.45, 10.99])
 
     def test_migracao_pode_ser_executada_mais_de_uma_vez(self):
-        legado = self.db_path
+        legado = Path(self.temp_dir.name) / "legado.db"
         with sqlite3.connect(legado) as conexao:
             conexao.execute("""
                 CREATE TABLE lancamentos (
