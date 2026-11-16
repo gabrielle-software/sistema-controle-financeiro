@@ -61,6 +61,11 @@ class TesteSistemaFinanceiro(unittest.TestCase):
             with self.subTest(valor=valor), self.assertRaises(ValueError):
                 self.cadastrar(valor=valor)
 
+    def test_rejeita_valores_nao_finitos(self):
+        for valor in ("NaN", "inf", "-inf"):
+            with self.subTest(valor=valor), self.assertRaises(ValueError):
+                self.cadastrar(valor=valor)
+
     def test_rejeita_data_invalida(self):
         with self.assertRaises(ValueError):
             self.cadastrar(data="01/11/2026")
