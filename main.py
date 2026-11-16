@@ -152,11 +152,11 @@ def relatorio_mensal(ano, mes, db_path=DB_PATH):
     prefixo = f"{int(ano):04d}-{int(mes):02d}-"
     with conectar(db_path) as conexao:
         receitas = conexao.execute(
-            "SELECT COALESCE(SUM(valor), 0) FROM lancamentos WHERE tipo='receita' AND data LIKE ?",
+            "SELECT COALESCE(SUM(valor_centavos), 0) FROM lancamentos WHERE tipo='receita' AND data LIKE ?",
             (prefixo + "%",),
         ).fetchone()[0]
         despesas = conexao.execute(
-            "SELECT COALESCE(SUM(valor), 0) FROM lancamentos WHERE tipo='despesa' AND data LIKE ?",
+            "SELECT COALESCE(SUM(valor_centavos), 0) FROM lancamentos WHERE tipo='despesa' AND data LIKE ?",
             (prefixo + "%",),
         ).fetchone()[0]
     return {"receitas": para_reais(receitas), "despesas": para_reais(despesas), "saldo": para_reais(receitas - despesas)}
