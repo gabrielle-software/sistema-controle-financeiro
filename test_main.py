@@ -12,6 +12,7 @@ from main import (
     listar_lancamentos,
     relatorio_mensal,
     validar_lancamento,
+    converter_para_centavos,
 )
 
 
@@ -66,6 +67,14 @@ class TesteSistemaFinanceiro(unittest.TestCase):
             with self.subTest(valor=valor), self.assertRaises(ValueError):
                 self.cadastrar(valor=valor)
 
+    def test_converte_valores_para_centavos_exatamente(self):
+        self.assertEqual(converter_para_centavos("10,99"), 1099)
+        self.assertEqual(converter_para_centavos("0.10"), 10)
+
+    def test_rejeita_mais_de_duas_casas_decimais(self):
+        with self.assertRaises(ValueError):
+            self.cadastrar(valor="10.999")
+
     def test_rejeita_data_invalida(self):
         with self.assertRaises(ValueError):
             self.cadastrar(data="01/11/2026")
@@ -73,7 +82,7 @@ class TesteSistemaFinanceiro(unittest.TestCase):
     def test_valida_lancamento(self):
         self.assertEqual(
             validar_lancamento("receita", "Extra", "Outros", "12.50", "2026-11-02"),
-            12.5,
+            1250,
         )
 
     def test_edita_lancamento_existente(self):
@@ -103,7 +112,7 @@ class TesteSistemaFinanceiro(unittest.TestCase):
     def test_calcula_saldo(self):
         self.cadastrar(valor=2000)
         self.cadastrar("despesa", "Mercado", "Alimentação", 350)
-        self.assertAlmostEqual(calcular_saldo(self.db_path), 1650)
+        self.assertEqual(calcular_saldo(self.db_path), 1650)
 
     def test_saldo_sem_lancamentos(self):
         self.assertEqual(calcular_saldo(self.db_path), 0)
