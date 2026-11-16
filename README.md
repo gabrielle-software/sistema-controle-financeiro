@@ -10,7 +10,7 @@ Projeto desenvolvido em Python para praticar fundamentos de Engenharia de Softwa
 - Registro de data e valor
 - Cálculo automático do saldo (receitas menos despesas)
 - Relatório mensal de receitas, despesas e saldo
-- Armazenamento persistente com SQLite
+- Armazenamento persistente com SQLite, guardando valores em centavos inteiros para evitar erros de arredondamento
 - Testes automatizados com `unittest`
 - Integração contínua com GitHub Actions
 
@@ -70,7 +70,7 @@ A Python command-line application created to practice software engineering funda
 - Store dates and amounts
 - Automatically calculate the balance (income minus expenses)
 - Generate monthly income, expense, and balance reports
-- Persistent storage with SQLite
+- Persistent storage with SQLite, storing amounts as integer cents to avoid rounding errors
 - Automated tests with `unittest`
 - Continuous integration with GitHub Actions
 
