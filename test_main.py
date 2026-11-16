@@ -1,4 +1,5 @@
 """Testes automatizados do Sistema de Controle Financeiro."""
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,6 +32,72 @@ class TesteSistemaFinanceiro(unittest.TestCase):
 
     def test_inicializa_banco_vazio(self):
         self.assertEqual(listar_lancamentos(self.db_path), [])
+
+    def test_migra_banco_legado_para_centavos(self):
+        legado = self.db_path
+        with sqlite3.connect(legado) as conexao:
+            conexao.execute("""
+                CREATE TABLE lancamentos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo TEXT NOT NULL,
+                    descricao TEXT NOT NULL,
+                    categoria TEXT NOT NULL,
+                    valor REAL NOT NULL,
+                    data TEXT NOT NULL
+                )
+            """)
+            conexao.execute(
+                """INSERT INTO lancamentos
+                   (id, tipo, descricao, categoria, valor, data)
+                   VALUES (7, 'receita', 'Pagamento', 'Trabalho', 123.45, '2026-10-05')"""
+            )
+            conexao.execute(
+                """INSERT INTO lancamentos
+                   (id, tipo, descricao, categoria, valor, data)
+                   VALUES (8, 'despesa', 'Mercado', 'Casa', 10.99, '2026-10-06')"""
+            )
+
+        inicializar_banco(legado)
+
+        with sqlite3.connect(legado) as conexao:
+            colunas = {linha[1] for linha in conexao.execute(
+                "PRAGMA table_info(lancamentos)"
+            )}
+            registros = conexao.execute(
+                "SELECT id, valor_centavos FROM lancamentos ORDER BY id"
+            ).fetchall()
+
+        self.assertIn("valor_centavos", colunas)
+        self.assertNotIn("valor", colunas)
+        self.assertEqual(registros, [(7, 12345), (8, 1099)])
+        itens = listar_lancamentos(legado)
+        self.assertEqual([item["valor"] for item in itens], [123.45, 10.99])
+
+    def test_migracao_pode_ser_executada_mais_de_uma_vez(self):
+        legado = self.db_path
+        with sqlite3.connect(legado) as conexao:
+            conexao.execute("""
+                CREATE TABLE lancamentos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo TEXT NOT NULL,
+                    descricao TEXT NOT NULL,
+                    categoria TEXT NOT NULL,
+                    valor REAL NOT NULL,
+                    data TEXT NOT NULL
+                )
+            """)
+            conexao.execute(
+                """INSERT INTO lancamentos
+                   (tipo, descricao, categoria, valor, data)
+                   VALUES ('receita', 'Pagamento', 'Trabalho', 50.25, '2026-10-05')"""
+            )
+
+        inicializar_banco(legado)
+        inicializar_banco(legado)
+
+        itens = listar_lancamentos(legado)
+        self.assertEqual(len(itens), 1)
+        self.assertEqual(itens[0]["valor"], 50.25)
 
     def test_cadastra_receita(self):
         identificador = self.cadastrar()
