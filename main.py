@@ -4,7 +4,7 @@ Aplicação de linha de comando com persistência em SQLite.
 """
 from contextlib import contextmanager
 from datetime import date, datetime
-import math
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import sqlite3
 
@@ -27,43 +27,63 @@ def conectar(db_path=DB_PATH):
 
 
 def inicializar_banco(db_path=DB_PATH):
-    """Cria a tabela de lançamentos caso ainda não exista."""
+    """Cria a tabela e migra, se necessário, valores antigos para centavos."""
     with conectar(db_path) as conexao:
-        conexao.execute(
-            """
-            CREATE TABLE IF NOT EXISTS lancamentos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tipo TEXT NOT NULL CHECK(tipo IN ('receita', 'despesa')),
-                descricao TEXT NOT NULL,
-                categoria TEXT NOT NULL,
-                valor REAL NOT NULL CHECK(valor > 0),
-                data TEXT NOT NULL
-            )
-            """
-        )
+        colunas = {linha[1] for linha in conexao.execute("PRAGMA table_info(lancamentos)").fetchall()}
+        if not colunas:
+            conexao.execute("""
+                CREATE TABLE lancamentos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo TEXT NOT NULL CHECK(tipo IN ('receita', 'despesa')),
+                    descricao TEXT NOT NULL,
+                    categoria TEXT NOT NULL,
+                    valor_centavos INTEGER NOT NULL CHECK(valor_centavos > 0),
+                    data TEXT NOT NULL
+                )
+            """)
+        elif "valor" in colunas and "valor_centavos" not in colunas:
+            conexao.execute("ALTER TABLE lancamentos ADD COLUMN valor_centavos INTEGER")
+            conexao.execute("UPDATE lancamentos SET valor_centavos = CAST(ROUND(valor * 100) AS INTEGER)")
+            conexao.execute("ALTER TABLE lancamentos DROP COLUMN valor")
+        elif "valor_centavos" not in colunas:
+            raise RuntimeError("Estrutura do banco de dados não reconhecida.")
+
+
+def converter_para_centavos(valor):
+    """Converte um valor decimal para centavos sem usar ponto flutuante."""
+    try:
+        decimal = Decimal(str(valor).strip().replace(",", "."))
+    except (InvalidOperation, ValueError, AttributeError):
+        raise ValueError("O valor deve ser numérico.") from None
+    if not decimal.is_finite():
+        raise ValueError("O valor deve ser um número finito.")
+    if decimal <= 0:
+        raise ValueError("O valor deve ser maior que zero.")
+    centavos = decimal * 100
+    if centavos != centavos.to_integral_value():
+        raise ValueError("Informe no máximo duas casas decimais.")
+    return int(centavos)
+
+
+def para_reais(centavos):
+    """Converte centavos inteiros para Decimal em reais."""
+    return (Decimal(centavos) / Decimal(100)).quantize(Decimal("0.01"))
 
 
 def validar_lancamento(tipo, descricao, categoria, valor, data_lancamento):
-    """Valida os campos de um lançamento e retorna o valor numérico."""
+    """Valida os campos de um lançamento e retorna o valor em centavos."""
     if tipo not in TIPOS_VALIDOS:
         raise ValueError("Tipo deve ser 'receita' ou 'despesa'.")
     if not isinstance(descricao, str) or not descricao.strip():
         raise ValueError("A descrição é obrigatória.")
     if not isinstance(categoria, str) or not categoria.strip():
         raise ValueError("A categoria é obrigatória.")
-    try:
-        valor = float(valor)
-    except (TypeError, ValueError):
-        raise ValueError("O valor deve ser numérico.") from None
-    if not math.isfinite(valor):
-        raise ValueError("O valor deve ser um número finito.")
-    if valor <= 0:
-        raise ValueError("O valor deve ser maior que zero.")
+    centavos = converter_para_centavos(valor)
     try:
         datetime.strptime(data_lancamento, "%Y-%m-%d")
     except (TypeError, ValueError):
         raise ValueError("A data deve estar no formato AAAA-MM-DD.") from None
-    return valor
+    return centavos
 
 
 def adicionar_lancamento(tipo, descricao, categoria, valor, data_lancamento=None, db_path=DB_PATH):
@@ -72,7 +92,7 @@ def adicionar_lancamento(tipo, descricao, categoria, valor, data_lancamento=None
     valor = validar_lancamento(tipo, descricao, categoria, valor, data_lancamento)
     with conectar(db_path) as conexao:
         cursor = conexao.execute(
-            """INSERT INTO lancamentos (tipo, descricao, categoria, valor, data)
+            """INSERT INTO lancamentos (tipo, descricao, categoria, valor_centavos, data)
                VALUES (?, ?, ?, ?, ?)""",
             (tipo, descricao.strip(), categoria.strip(), valor, data_lancamento),
         )
@@ -85,7 +105,7 @@ def editar_lancamento(lancamento_id, tipo, descricao, categoria, valor, data_lan
     with conectar(db_path) as conexao:
         cursor = conexao.execute(
             """UPDATE lancamentos
-               SET tipo = ?, descricao = ?, categoria = ?, valor = ?, data = ?
+               SET tipo = ?, descricao = ?, categoria = ?, valor_centavos = ?, data = ?
                WHERE id = ?""",
             (tipo, descricao.strip(), categoria.strip(), valor, data_lancamento, lancamento_id),
         )
@@ -103,12 +123,12 @@ def listar_lancamentos(db_path=DB_PATH):
     """Retorna todos os lançamentos ordenados da data mais recente."""
     with conectar(db_path) as conexao:
         linhas = conexao.execute(
-            """SELECT id, tipo, descricao, categoria, valor, data
+            """SELECT id, tipo, descricao, categoria, valor_centavos, data
                FROM lancamentos ORDER BY data DESC, id DESC"""
         ).fetchall()
     return [
         {"id": linha[0], "tipo": linha[1], "descricao": linha[2],
-         "categoria": linha[3], "valor": linha[4], "data": linha[5]}
+         "categoria": linha[3], "valor": para_reais(linha[4]), "data": linha[5]}
         for linha in linhas
     ]
 
@@ -117,12 +137,12 @@ def calcular_saldo(db_path=DB_PATH):
     """Calcula receitas menos despesas."""
     with conectar(db_path) as conexao:
         receitas = conexao.execute(
-            "SELECT COALESCE(SUM(valor), 0) FROM lancamentos WHERE tipo = 'receita'"
+            "SELECT COALESCE(SUM(valor_centavos), 0) FROM lancamentos WHERE tipo = 'receita'"
         ).fetchone()[0]
         despesas = conexao.execute(
-            "SELECT COALESCE(SUM(valor), 0) FROM lancamentos WHERE tipo = 'despesa'"
+            "SELECT COALESCE(SUM(valor_centavos), 0) FROM lancamentos WHERE tipo = 'despesa'"
         ).fetchone()[0]
-    return receitas - despesas
+    return para_reais(receitas - despesas)
 
 
 def relatorio_mensal(ano, mes, db_path=DB_PATH):
@@ -139,7 +159,7 @@ def relatorio_mensal(ano, mes, db_path=DB_PATH):
             "SELECT COALESCE(SUM(valor), 0) FROM lancamentos WHERE tipo='despesa' AND data LIKE ?",
             (prefixo + "%",),
         ).fetchone()[0]
-    return {"receitas": receitas, "despesas": despesas, "saldo": receitas - despesas}
+    return {"receitas": para_reais(receitas), "despesas": para_reais(despesas), "saldo": para_reais(receitas - despesas)}
 
 
 def exibir_menu():
