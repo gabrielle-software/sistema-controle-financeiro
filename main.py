@@ -2,7 +2,9 @@
 
 Aplicação de linha de comando com persistência em SQLite.
 """
+from contextlib import contextmanager
 from datetime import date, datetime
+import math
 from pathlib import Path
 import sqlite3
 
@@ -10,9 +12,18 @@ DB_PATH = Path(__file__).with_name("financeiro.db")
 TIPOS_VALIDOS = {"receita", "despesa"}
 
 
+@contextmanager
 def conectar(db_path=DB_PATH):
-    """Abre uma conexão com o banco de dados informado."""
-    return sqlite3.connect(db_path)
+    """Abre uma conexão e garante seu fechamento ao terminar a operação."""
+    conexao = sqlite3.connect(db_path)
+    try:
+        yield conexao
+        conexao.commit()
+    except Exception:
+        conexao.rollback()
+        raise
+    finally:
+        conexao.close()
 
 
 def inicializar_banco(db_path=DB_PATH):
@@ -44,6 +55,8 @@ def validar_lancamento(tipo, descricao, categoria, valor, data_lancamento):
         valor = float(valor)
     except (TypeError, ValueError):
         raise ValueError("O valor deve ser numérico.") from None
+    if not math.isfinite(valor):
+        raise ValueError("O valor deve ser um número finito.")
     if valor <= 0:
         raise ValueError("O valor deve ser maior que zero.")
     try:
